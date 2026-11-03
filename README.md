@@ -1,29 +1,24 @@
-# Product Search
+# Student Performance App
 
-A small Flutter app for searching a built-in list of fruits. Enter part or all
-of a fruit name to filter the results as you type.
+A Flutter app for entering a student's name, registration number, and three
+subject marks. It validates the form, navigates to a result screen, and
+displays the total, average, and percentage.
 
 ## Features
 
-- Search the fruit list by name.
-- Update results immediately while typing.
-- Clear the search field with the clear button.
-- Show a friendly message when no products match.
-- Scroll through the matching results.
-
-## Fruit list
-
-The app currently includes:
-
-Apple, Banana, Mango, Orange, Grapes, Pineapple, Watermelon, Strawberry,
-Papaya, and Guava.
+- Validates that student details are provided.
+- Restricts each subject mark to a number from 0 to 100.
+- Navigates between the student form and result screens using named routes.
+- Calculates total marks, average, and percentage.
+- Allows returning to the form from the result screen.
 
 ## Requirements
 
-- Flutter SDK installed and configured.
+- Flutter SDK installed and configured. The project requires Dart SDK
+  `^3.13.7`, as specified in `pubspec.yaml`.
 - A connected device, emulator, or supported desktop/browser target.
 
-Check your environment with:
+Check the Flutter installation with:
 
 ```bash
 flutter doctor
@@ -31,14 +26,14 @@ flutter doctor
 
 ## Run the app
 
-From the project directory, install dependencies and start the app:
+From the project directory:
 
 ```bash
 flutter pub get
 flutter run
 ```
 
-To choose a target device:
+To select a particular connected device:
 
 ```bash
 flutter devices
@@ -54,27 +49,28 @@ flutter analyze
 
 ## Build
 
-For example, build an Android APK or a web release:
+For example, build an Android APK or web release:
 
 ```bash
 flutter build apk
 flutter build web
 ```
 
-Other targets may be available depending on your Flutter installation and
-platform-specific toolchains. See the [Flutter deployment
-guide](https://docs.flutter.dev/deployment) for details.
+Other targets may require additional platform SDKs and setup. See the
+[Flutter deployment guide](https://docs.flutter.dev/deployment).
 
 ## Project structure
 
 ```text
 lib/
-  main.dart             App entry point and product search interface
+  main.dart             App entry point and named-route configuration
+  home_screen.dart      Student details form and validation
+  second_screen.dart    Student results screen
+  user_data_model.dart  Student data and result calculations
 test/
-  widget_test.dart      Widget tests
-assets/
-  images/               Image assets configured for Flutter
+  widget_test.dart      Form-to-results navigation widget test
 ```
 
-The fruit names are stored in the `products` list in `lib/main.dart`. Edit
-that list to change the available search results.
+The app's routes are configured in `lib/main.dart`. The student form,
+calculation model, and result display are in the corresponding files listed
+above.
