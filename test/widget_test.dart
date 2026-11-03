@@ -1,28 +1,48 @@
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:project_1/main.dart';
+import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 void main() {
-  testWidgets('validates student details and shows calculated results', (
+  setUpAll(() {
+    sqfliteFfiInit();
+    databaseFactory = databaseFactoryFfi;
+  });
+
+  testWidgets('shows the student form and validates required fields', (
     WidgetTester tester,
   ) async {
-    await tester.pumpWidget(const MyApp());
+    await tester.pumpWidget(const StudentApp());
+    await tester.pump();
 
-    final fields = find.byType(TextFormField);
-    await tester.enterText(fields.at(0), 'Alex Student');
-    await tester.enterText(fields.at(1), 'STU-001');
-    await tester.enterText(fields.at(2), '80');
-    await tester.enterText(fields.at(3), '90');
-    await tester.enterText(fields.at(4), '100');
-    await tester.tap(find.text('View Result >>'));
-    await tester.pumpAndSettle();
+    expect(find.text('Student Record Management'), findsOneWidget);
+    expect(find.text('Add Student Details'), findsOneWidget);
+    expect(find.text('Saved Student Records'), findsOneWidget);
 
-    expect(find.text('Student Result'), findsOneWidget);
-    expect(find.text('Alex Student'), findsOneWidget);
-    expect(find.text('STU-001'), findsOneWidget);
-    expect(find.text('270.00'), findsOneWidget);
-    expect(find.text('90.00'), findsOneWidget);
-    expect(find.text('90.00%'), findsOneWidget);
+    await tester.tap(find.text('Save Student'));
+    await tester.pump();
+
+    expect(find.text('Please enter the student name'), findsOneWidget);
+    expect(find.text('Please enter the registration number'), findsOneWidget);
+    expect(find.text('Please enter the department'), findsOneWidget);
+    expect(find.text('Please enter the marks'), findsOneWidget);
+  });
+
+  test('persists student records in SQLite', () async {
+    final database = await DatabaseHelper.instance.database;
+    await database.delete('students');
+
+    await DatabaseHelper.instance.insertStudent({
+      'name': 'Alex Student',
+      'regNo': 'STU-001',
+      'department': 'Computer Science',
+      'marks': 92.5,
+    });
+
+    final students = await DatabaseHelper.instance.getStudents();
+    expect(students, hasLength(1));
+    expect(students.single['name'], 'Alex Student');
+    expect(students.single['regNo'], 'STU-001');
+    expect(students.single['marks'], 92.5);
   });
 }

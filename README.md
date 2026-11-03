@@ -1,43 +1,56 @@
-# Student Performance App
+# Student Records — SQLite
 
-A Flutter app for entering a student's name, registration number, and three
-subject marks. It validates the form, navigates to a result screen, and
-displays the total, average, and percentage.
+A Flutter app for saving and viewing student records using a local SQLite
+database. Each record contains a student's name, registration number,
+department, and marks.
 
 ## Features
 
-- Validates that student details are provided.
-- Restricts each subject mark to a number from 0 to 100.
-- Navigates between the student form and result screens using named routes.
-- Calculates total marks, average, and percentage.
-- Allows returning to the form from the result screen.
+- Add student records with form validation.
+- Restrict marks to values from 0 to 100.
+- Persist records locally in SQLite.
+- List saved records, newest first.
+- Keep registration numbers unique.
+- Use the `sqflite_common_ffi_web` SQLite implementation when running on web.
 
 ## Requirements
 
-- Flutter SDK installed and configured. The project requires Dart SDK
-  `^3.13.7`, as specified in `pubspec.yaml`.
-- A connected device, emulator, or supported desktop/browser target.
+- Flutter SDK installed and configured.
+- Dart SDK `^3.13.7` (see `pubspec.yaml`).
+- For Android, an Android SDK/emulator or a connected device.
+- For web, Chrome or another supported browser.
 
-Check the Flutter installation with:
+Check your Flutter setup with:
 
 ```bash
 flutter doctor
 ```
 
-## Run the app
+## Run
 
-From the project directory:
+Install dependencies and run on a connected device or emulator:
 
 ```bash
 flutter pub get
 flutter run
 ```
 
-To select a particular connected device:
+To run in Chrome:
+
+```bash
+dart run sqflite_common_ffi_web:setup --sqlite3-wasm-url=https://github.com/simolus3/sqlite3.dart/releases/download/sqlite3-3.5.2/sqlite3.wasm
+flutter run -d chrome
+```
+
+The setup command generates the SQLite WebAssembly binary and shared worker
+required by the web database implementation. The WASM URL is pinned to the
+SQLite 3.5.2 version resolved in `pubspec.lock`; if that version changes,
+update the URL to the matching SQLite release and rerun setup.
+
+To list available targets:
 
 ```bash
 flutter devices
-flutter run -d <device-id>
 ```
 
 ## Test and analyze
@@ -47,30 +60,42 @@ flutter test
 flutter analyze
 ```
 
+Widget tests use `sqflite_common_ffi` to provide a local SQLite database
+factory without requiring a device or emulator.
+
 ## Build
 
-For example, build an Android APK or web release:
+Build an Android APK or a web release:
 
 ```bash
 flutter build apk
 flutter build web
 ```
 
-Other targets may require additional platform SDKs and setup. See the
+Other platforms may need additional SDKs and SQLite setup. See the
 [Flutter deployment guide](https://docs.flutter.dev/deployment).
+
+## Data and database
+
+The app creates a `students` table with these columns:
+
+| Column | Type | Details |
+| --- | --- | --- |
+| `id` | Integer | Auto-incrementing primary key |
+| `name` | Text | Required |
+| `regNo` | Text | Required and unique |
+| `department` | Text | Required |
+| `marks` | Real | Required; app accepts values from 0 to 100 |
+
+On native platforms, the database is named `student_records.db`. The web
+implementation uses `student_records_web.db`. Records are stored locally on
+the device/browser and are not synchronized to a server.
 
 ## Project structure
 
 ```text
 lib/
-  main.dart             App entry point and named-route configuration
-  home_screen.dart      Student details form and validation
-  second_screen.dart    Student results screen
-  user_data_model.dart  Student data and result calculations
+  main.dart             App UI, SQLite initialization, and record operations
 test/
-  widget_test.dart      Form-to-results navigation widget test
+  widget_test.dart      Student form and required-field validation test
 ```
-
-The app's routes are configured in `lib/main.dart`. The student form,
-calculation model, and result display are in the corresponding files listed
-above.
