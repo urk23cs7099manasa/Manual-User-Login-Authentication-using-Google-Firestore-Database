@@ -1,57 +1,68 @@
-# Student Records — SQLite
+# Student Records — Cloud Firestore
 
-A Flutter app for saving and viewing student records using a local SQLite
-database. Each record contains a student's name, registration number,
-department, and marks.
+A Flutter app for adding and viewing student records stored in a Cloud
+Firestore collection. Records include a student's name, registration number,
+department, marks, and creation timestamp.
 
 ## Features
 
-- Add student records with form validation.
-- Restrict marks to values from 0 to 100.
-- Persist records locally in SQLite.
-- List saved records, newest first.
-- Keep registration numbers unique.
-- Use the `sqflite_common_ffi_web` SQLite implementation when running on web.
+- Validates required student fields and marks from 0 to 100.
+- Saves records to the Firestore `students` collection.
+- Uses the uppercased registration number as the document ID.
+- Shows records in real time, sorted by registration number.
+- Displays Firestore read and write errors in the app.
+- Includes Firestore-backed widget tests using an in-memory fake.
 
 ## Requirements
 
-- Flutter SDK installed and configured.
-- Dart SDK `^3.13.7` (see `pubspec.yaml`).
-- For Android, an Android SDK/emulator or a connected device.
-- For web, Chrome or another supported browser.
+- Flutter SDK and Dart SDK `^3.13.7`.
+- A Firebase project with Cloud Firestore enabled.
+- A registered Firebase Web app for Chrome, or Android app for Android.
+- Firestore security rules that authorize the app's reads and writes.
 
-Check your Flutter setup with:
+The app does not implement user authentication. Do not deploy rules that allow
+unrestricted public access; configure authentication and suitable rules before
+using this app with real student data.
 
-```bash
-flutter doctor
-```
+## Configure Firebase
+
+1. Create a Firebase project and enable Cloud Firestore.
+2. Register a Web app and/or Android app in Firebase project settings.
+3. Copy the configuration template:
+
+   ```powershell
+   Copy-Item firebase_config.example.json firebase_config.json
+   ```
+
+4. Fill `firebase_config.json` with the values from the Firebase app settings:
+   - `FIREBASE_API_KEY`
+   - `FIREBASE_MESSAGING_SENDER_ID`
+   - `FIREBASE_PROJECT_ID`
+   - `FIREBASE_WEB_APP_ID` for web
+   - `FIREBASE_ANDROID_APP_ID` for Android
+   - `FIREBASE_AUTH_DOMAIN` and `FIREBASE_STORAGE_BUCKET` when provided
+
+`firebase_config.json` is ignored by Git. Firebase client configuration is
+not a substitute for Firestore security rules; never put service-account
+credentials or other server secrets in the Flutter app.
 
 ## Run
 
-Install dependencies and run on a connected device or emulator:
+Install dependencies, then run with the local Firebase configuration:
 
 ```bash
 flutter pub get
-flutter run
+flutter run -d chrome --dart-define-from-file=firebase_config.json
 ```
 
-To run in Chrome:
+For Android:
 
 ```bash
-dart run sqflite_common_ffi_web:setup --sqlite3-wasm-url=https://github.com/simolus3/sqlite3.dart/releases/download/sqlite3-3.5.2/sqlite3.wasm
-flutter run -d chrome
+flutter run -d <device-id> --dart-define-from-file=firebase_config.json
 ```
 
-The setup command generates the SQLite WebAssembly binary and shared worker
-required by the web database implementation. The WASM URL is pinned to the
-SQLite 3.5.2 version resolved in `pubspec.lock`; if that version changes,
-update the URL to the matching SQLite release and rerun setup.
-
-To list available targets:
-
-```bash
-flutter devices
-```
+If Firebase configuration is missing for the selected platform, the app
+displays setup guidance instead of attempting an unconfigured connection.
 
 ## Test and analyze
 
@@ -60,42 +71,43 @@ flutter test
 flutter analyze
 ```
 
-Widget tests use `sqflite_common_ffi` to provide a local SQLite database
-factory without requiring a device or emulator.
+Tests use `fake_cloud_firestore`, so they do not need a live Firebase project
+or network connection.
 
 ## Build
 
-Build an Android APK or a web release:
-
 ```bash
-flutter build apk
-flutter build web
+flutter build web --dart-define-from-file=firebase_config.json
+flutter build apk --dart-define-from-file=firebase_config.json
 ```
 
-Other platforms may need additional SDKs and SQLite setup. See the
-[Flutter deployment guide](https://docs.flutter.dev/deployment).
+See the [Flutter deployment guide](https://docs.flutter.dev/deployment) for
+platform-specific setup.
 
-## Data and database
+## Firestore data model
 
-The app creates a `students` table with these columns:
+Collection: `students`
 
-| Column | Type | Details |
+Each document ID is the uppercase registration number and contains:
+
+| Field | Type | Description |
 | --- | --- | --- |
-| `id` | Integer | Auto-incrementing primary key |
-| `name` | Text | Required |
-| `regNo` | Text | Required and unique |
-| `department` | Text | Required |
-| `marks` | Real | Required; app accepts values from 0 to 100 |
+| `name` | String | Student name |
+| `registrationNumber` | String | Uppercase registration number |
+| `department` | String | Department |
+| `marks` | Number | Mark from 0 to 100 |
+| `createdAt` | Timestamp | Firestore server timestamp |
 
-On native platforms, the database is named `student_records.db`. The web
-implementation uses `student_records_web.db`. Records are stored locally on
-the device/browser and are not synchronized to a server.
+Saving a record with an existing registration number replaces that document.
 
 ## Project structure
 
 ```text
 lib/
-  main.dart             App UI, SQLite initialization, and record operations
+  main.dart             App UI and Firestore reads/writes
+  firebase_options.dart Firebase options from compile-time configuration
+firebase_config.example.json
+                        Template for local Firebase configuration
 test/
-  widget_test.dart      Student form and required-field validation test
+  widget_test.dart      Configuration, validation, and save tests
 ```

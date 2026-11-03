@@ -1,93 +1,91 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart';
-import 'package:path/path.dart' as path;
-import 'package:sqflite/sqflite.dart';
-import 'package:sqflite_common_ffi_web/sqflite_ffi_web.dart';
+
+import 'firebase_options.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  // Initialize the SQLite implementation for Flutter Web
-  if (kIsWeb) {
-    databaseFactory = databaseFactoryFfiWeb;
+
+  final firebaseOptions = DefaultFirebaseOptions.currentPlatform;
+  if (firebaseOptions == null) {
+    runApp(const StudentFirestoreApp(firebaseConfigured: false));
+    return;
   }
-  runApp(const StudentApp());
+
+  await Firebase.initializeApp(options: firebaseOptions);
+  runApp(const StudentFirestoreApp(firebaseConfigured: true));
 }
 
-class StudentApp extends StatelessWidget {
-  const StudentApp({super.key});
+class StudentFirestoreApp extends StatelessWidget {
+  final bool firebaseConfigured;
+
+  const StudentFirestoreApp({super.key, required this.firebaseConfigured});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      title: 'Student Records',
+      title: 'Student Records - Firestore',
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.indigo),
         useMaterial3: true,
       ),
-      home: const StudentHomePage(),
+      home: firebaseConfigured
+          ? const StudentHomePage()
+          : const FirebaseConfigurationPage(),
     );
   }
 }
 
-// Database Helper
-class DatabaseHelper {
-  DatabaseHelper._privateConstructor();
-  static final DatabaseHelper instance = DatabaseHelper._privateConstructor();
-  static Database? _database;
+class FirebaseConfigurationPage extends StatelessWidget {
+  const FirebaseConfigurationPage({super.key});
 
-  Future<Database> get database async {
-    if (_database != null) {
-      return _database!;
-    }
-    _database = await _initializeDatabase();
-    return _database!;
-  }
-
-  Future<Database> _initializeDatabase() async {
-    final String databasePath;
-    if (kIsWeb) {
-      databasePath = 'student_records_web.db';
-    } else {
-      final dbDirectory = await getDatabasesPath();
-      databasePath = path.join(dbDirectory, 'student_records.db');
-    }
-
-    return openDatabase(
-      databasePath,
-      version: 1,
-      onCreate: (db, version) async {
-        await db.execute('''
-          CREATE TABLE students (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT NOT NULL,
-            regNo TEXT NOT NULL UNIQUE,
-            department TEXT NOT NULL,
-            marks REAL NOT NULL
-          )
-        ''');
-      },
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Student Records - Firestore'),
+        centerTitle: true,
+      ),
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 600),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.cloud_off, size: 56, color: Colors.indigo),
+                const SizedBox(height: 16),
+                Text(
+                  'Firebase is not configured for this platform.',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                const Text(
+                  'Create firebase_config.json from the example file, add your '
+                  'Firebase project settings, then run this app with '
+                  '--dart-define-from-file=firebase_config.json.',
+                  textAlign: TextAlign.center,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
-  }
-
-  Future<int> insertStudent(Map<String, dynamic> student) async {
-    final db = await database;
-    return db.insert(
-      'students',
-      student,
-      conflictAlgorithm: ConflictAlgorithm.abort,
-    );
-  }
-
-  Future<List<Map<String, dynamic>>> getStudents() async {
-    final db = await database;
-    return db.query('students', orderBy: 'id DESC');
   }
 }
 
-// Student Home Page
 class StudentHomePage extends StatefulWidget {
-  const StudentHomePage({super.key});
+  final FirebaseFirestore? firestore;
+
+  const StudentHomePage({super.key, this.firestore});
 
   @override
   State<StudentHomePage> createState() => _StudentHomePageState();
@@ -100,32 +98,10 @@ class _StudentHomePageState extends State<StudentHomePage> {
   final _departmentController = TextEditingController();
   final _marksController = TextEditingController();
 
-  List<Map<String, dynamic>> _students = [];
-  bool _isLoading = true;
+  late final CollectionReference<Map<String, dynamic>> _students =
+      (widget.firestore ?? FirebaseFirestore.instance).collection('students');
+
   bool _isSaving = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadStudents();
-  }
-
-  Future<void> _loadStudents() async {
-    try {
-      final students = await DatabaseHelper.instance.getStudents();
-      if (!mounted) return;
-      setState(() {
-        _students = students;
-        _isLoading = false;
-      });
-    } catch (error) {
-      if (!mounted) return;
-      setState(() {
-        _isLoading = false;
-      });
-      _showMessage('Error loading students: $error');
-    }
-  }
 
   Future<void> _saveStudent() async {
     if (!_formKey.currentState!.validate()) {
@@ -137,14 +113,16 @@ class _StudentHomePageState extends State<StudentHomePage> {
     });
 
     try {
-      final student = <String, dynamic>{
+      final registrationNumber = _regNoController.text.trim().toUpperCase();
+
+      await _students.doc(registrationNumber).set({
         'name': _nameController.text.trim(),
-        'regNo': _regNoController.text.trim(),
+        'registrationNumber': registrationNumber,
         'department': _departmentController.text.trim(),
         'marks': double.parse(_marksController.text.trim()),
-      };
+        'createdAt': FieldValue.serverTimestamp(),
+      });
 
-      await DatabaseHelper.instance.insertStudent(student);
       if (!mounted) return;
 
       _nameController.clear();
@@ -152,12 +130,9 @@ class _StudentHomePageState extends State<StudentHomePage> {
       _departmentController.clear();
       _marksController.clear();
       _showMessage('Student record saved successfully!');
-      await _loadStudents();
     } catch (error) {
       if (!mounted) return;
-      _showMessage(
-        'Error saving student. Check whether the registration number already exists.\n$error',
-      );
+      _showMessage('Error saving student: $error');
     } finally {
       if (mounted) {
         setState(() {
@@ -187,7 +162,7 @@ class _StudentHomePageState extends State<StudentHomePage> {
     return Scaffold(
       appBar: AppBar(
         title: const Text(
-          'Student Record Management',
+          'Student Records - Firestore',
           style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
         ),
         backgroundColor: Colors.indigo,
@@ -210,7 +185,7 @@ class _StudentHomePageState extends State<StudentHomePage> {
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
                         const Text(
-                          'Add Student Details',
+                          'Enter Student Details',
                           style: TextStyle(
                             fontSize: 22,
                             fontWeight: FontWeight.bold,
@@ -221,13 +196,12 @@ class _StudentHomePageState extends State<StudentHomePage> {
                           controller: _nameController,
                           decoration: const InputDecoration(
                             labelText: 'Student Name',
-                            hintText: 'Enter student name',
                             prefixIcon: Icon(Icons.person),
                             border: OutlineInputBorder(),
                           ),
                           validator: (value) {
                             if (value == null || value.trim().isEmpty) {
-                              return 'Please enter the student name';
+                              return 'Please enter student name';
                             }
                             return null;
                           },
@@ -237,13 +211,12 @@ class _StudentHomePageState extends State<StudentHomePage> {
                           controller: _regNoController,
                           decoration: const InputDecoration(
                             labelText: 'Registration Number',
-                            hintText: 'Enter registration number',
                             prefixIcon: Icon(Icons.badge),
                             border: OutlineInputBorder(),
                           ),
                           validator: (value) {
                             if (value == null || value.trim().isEmpty) {
-                              return 'Please enter the registration number';
+                              return 'Please enter registration number';
                             }
                             return null;
                           },
@@ -253,13 +226,12 @@ class _StudentHomePageState extends State<StudentHomePage> {
                           controller: _departmentController,
                           decoration: const InputDecoration(
                             labelText: 'Department',
-                            hintText: 'Enter department',
                             prefixIcon: Icon(Icons.school),
                             border: OutlineInputBorder(),
                           ),
                           validator: (value) {
                             if (value == null || value.trim().isEmpty) {
-                              return 'Please enter the department';
+                              return 'Please enter department';
                             }
                             return null;
                           },
@@ -271,18 +243,17 @@ class _StudentHomePageState extends State<StudentHomePage> {
                             decimal: true,
                           ),
                           decoration: const InputDecoration(
-                            labelText: 'Marks',
-                            hintText: 'Enter marks (0-100)',
+                            labelText: 'Marks (0-100)',
                             prefixIcon: Icon(Icons.grade),
                             border: OutlineInputBorder(),
                           ),
                           validator: (value) {
                             if (value == null || value.trim().isEmpty) {
-                              return 'Please enter the marks';
+                              return 'Please enter marks';
                             }
                             final marks = double.tryParse(value.trim());
                             if (marks == null || marks < 0 || marks > 100) {
-                              return 'Enter a valid mark between 0 and 100';
+                              return 'Enter marks between 0 and 100';
                             }
                             return null;
                           },
@@ -299,8 +270,12 @@ class _StudentHomePageState extends State<StudentHomePage> {
                                     color: Colors.white,
                                   ),
                                 )
-                              : const Icon(Icons.save),
-                          label: Text(_isSaving ? 'Saving...' : 'Save Student'),
+                              : const Icon(Icons.cloud_upload),
+                          label: Text(
+                            _isSaving
+                                ? 'Saving...'
+                                : 'Save Student to Firestore',
+                          ),
                           style: ElevatedButton.styleFrom(
                             backgroundColor: Colors.indigo,
                             foregroundColor: Colors.white,
@@ -313,69 +288,75 @@ class _StudentHomePageState extends State<StudentHomePage> {
                 ),
               ),
               const SizedBox(height: 25),
-              Row(
-                children: [
-                  const Expanded(
-                    child: Text(
-                      'Saved Student Records',
-                      style: TextStyle(
-                        fontSize: 22,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                  IconButton(
-                    tooltip: 'Refresh records',
-                    onPressed: _loadStudents,
-                    icon: const Icon(Icons.refresh),
-                  ),
-                ],
+              const Text(
+                'Saved Student Records',
+                style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 10),
-              if (_isLoading)
-                const Center(
-                  child: Padding(
-                    padding: EdgeInsets.all(25),
-                    child: CircularProgressIndicator(),
-                  ),
-                )
-              else if (_students.isEmpty)
-                const Card(
-                  child: Padding(
-                    padding: EdgeInsets.all(20),
-                    child: Center(
-                      child: Text(
-                        'No student records found. Add a student above.',
+              StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                stream: _students.orderBy('registrationNumber').snapshots(),
+                builder: (context, snapshot) {
+                  if (snapshot.hasError) {
+                    return Card(
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Text('Error loading records: ${snapshot.error}'),
                       ),
-                    ),
-                  ),
-                )
-              else
-                ..._students.map((student) {
-                  return Card(
-                    margin: const EdgeInsets.only(bottom: 12),
-                    child: ListTile(
-                      leading: CircleAvatar(
-                        backgroundColor: Colors.indigo,
-                        foregroundColor: Colors.white,
-                        child: Text('${student['id']}'),
-                      ),
-                      title: Text(
-                        student['name'].toString(),
-                        style: const TextStyle(fontWeight: FontWeight.bold),
-                      ),
-                      subtitle: Padding(
-                        padding: const EdgeInsets.only(top: 6),
-                        child: Text(
-                          'Registration No: ${student['regNo']}\n'
-                          'Department: ${student['department']}\n'
-                          'Marks: ${student['marks']}',
+                    );
+                  }
+
+                  if (snapshot.connectionState == ConnectionState.waiting &&
+                      !snapshot.hasData) {
+                    return const Padding(
+                      padding: EdgeInsets.all(24),
+                      child: Center(child: CircularProgressIndicator()),
+                    );
+                  }
+
+                  final documents = snapshot.data?.docs ?? [];
+                  if (documents.isEmpty) {
+                    return const Card(
+                      child: Padding(
+                        padding: EdgeInsets.all(20),
+                        child: Center(
+                          child: Text(
+                            'No student records found. Add a student using the form above.',
+                          ),
                         ),
                       ),
-                      isThreeLine: true,
-                    ),
+                    );
+                  }
+
+                  return Column(
+                    children: documents.map((document) {
+                      final student = document.data();
+                      return Card(
+                        margin: const EdgeInsets.only(bottom: 12),
+                        child: ListTile(
+                          leading: const CircleAvatar(
+                            backgroundColor: Colors.indigo,
+                            foregroundColor: Colors.white,
+                            child: Icon(Icons.person),
+                          ),
+                          title: Text(
+                            student['name']?.toString() ?? '',
+                            style: const TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                          subtitle: Padding(
+                            padding: const EdgeInsets.only(top: 6),
+                            child: Text(
+                              'Registration No: ${student['registrationNumber'] ?? ''}\n'
+                              'Department: ${student['department'] ?? ''}\n'
+                              'Marks: ${student['marks'] ?? ''}',
+                            ),
+                          ),
+                          isThreeLine: true,
+                        ),
+                      );
+                    }).toList(),
                   );
-                }),
+                },
+              ),
             ],
           ),
         ),

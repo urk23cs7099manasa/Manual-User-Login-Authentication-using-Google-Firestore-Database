@@ -1,48 +1,81 @@
+import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:project_1/main.dart';
-import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 void main() {
-  setUpAll(() {
-    sqfliteFfiInit();
-    databaseFactory = databaseFactoryFfi;
+  late FakeFirebaseFirestore firestore;
+
+  setUp(() {
+    firestore = FakeFirebaseFirestore();
   });
 
-  testWidgets('shows the student form and validates required fields', (
+  testWidgets('shows setup guidance if Firebase is not configured', (
     WidgetTester tester,
   ) async {
-    await tester.pumpWidget(const StudentApp());
-    await tester.pump();
+    await tester.pumpWidget(
+      const StudentFirestoreApp(firebaseConfigured: false),
+    );
 
-    expect(find.text('Student Record Management'), findsOneWidget);
-    expect(find.text('Add Student Details'), findsOneWidget);
-    expect(find.text('Saved Student Records'), findsOneWidget);
-
-    await tester.tap(find.text('Save Student'));
-    await tester.pump();
-
-    expect(find.text('Please enter the student name'), findsOneWidget);
-    expect(find.text('Please enter the registration number'), findsOneWidget);
-    expect(find.text('Please enter the department'), findsOneWidget);
-    expect(find.text('Please enter the marks'), findsOneWidget);
+    expect(
+      find.text('Firebase is not configured for this platform.'),
+      findsOneWidget,
+    );
   });
 
-  test('persists student records in SQLite', () async {
-    final database = await DatabaseHelper.instance.database;
-    await database.delete('students');
+  testWidgets('validates required student fields', (WidgetTester tester) async {
+    await tester.pumpWidget(
+      MaterialApp(home: StudentHomePage(firestore: firestore)),
+    );
+    await tester.pump();
 
-    await DatabaseHelper.instance.insertStudent({
-      'name': 'Alex Student',
-      'regNo': 'STU-001',
-      'department': 'Computer Science',
-      'marks': 92.5,
-    });
+    await tester.ensureVisible(find.text('Save Student to Firestore'));
+    await tester.tap(find.text('Save Student to Firestore'));
+    await tester.pump();
 
-    final students = await DatabaseHelper.instance.getStudents();
-    expect(students, hasLength(1));
-    expect(students.single['name'], 'Alex Student');
-    expect(students.single['regNo'], 'STU-001');
-    expect(students.single['marks'], 92.5);
+    expect(find.text('Please enter student name'), findsOneWidget);
+    expect(find.text('Please enter registration number'), findsOneWidget);
+    expect(find.text('Please enter department'), findsOneWidget);
+    expect(find.text('Please enter marks'), findsOneWidget);
+  });
+
+  testWidgets('saves a student and displays the Firestore record', (
+    WidgetTester tester,
+  ) async {
+    tester.view.physicalSize = const Size(1000, 1400);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      MaterialApp(home: StudentHomePage(firestore: firestore)),
+    );
+    await tester.pump();
+
+    final fields = find.byType(TextFormField);
+    await tester.enterText(fields.at(0), 'Alex Student');
+    await tester.enterText(fields.at(1), 'stu-001');
+    await tester.enterText(fields.at(2), 'Computer Science');
+    await tester.enterText(fields.at(3), '92.5');
+    await tester.tap(find.text('Save Student to Firestore'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    final record = await firestore.collection('students').doc('STU-001').get();
+    expect(record.exists, isTrue);
+    expect(record.data()?['name'], 'Alex Student');
+    expect(record.data()?['registrationNumber'], 'STU-001');
+    expect(record.data()?['department'], 'Computer Science');
+    expect(record.data()?['marks'], 92.5);
+
+    await tester.pump();
+    expect(find.text('Alex Student'), findsOneWidget);
+    expect(
+      find.text(
+        'Registration No: STU-001\nDepartment: Computer Science\nMarks: 92.5',
+      ),
+      findsOneWidget,
+    );
   });
 }
