@@ -15,7 +15,7 @@ void main() {
     WidgetTester tester,
   ) async {
     await tester.pumpWidget(
-      const StudentFirestoreApp(firebaseConfigured: false),
+      const FirestoreSearchApp(firebaseConfigured: false),
     );
 
     expect(
@@ -24,58 +24,108 @@ void main() {
     );
   });
 
-  testWidgets('validates required student fields', (WidgetTester tester) async {
-    await tester.pumpWidget(
-      MaterialApp(home: StudentHomePage(firestore: firestore)),
-    );
-    await tester.pump();
-
-    await tester.ensureVisible(find.text('Save Student to Firestore'));
-    await tester.tap(find.text('Save Student to Firestore'));
-    await tester.pump();
-
-    expect(find.text('Please enter student name'), findsOneWidget);
-    expect(find.text('Please enter registration number'), findsOneWidget);
-    expect(find.text('Please enter department'), findsOneWidget);
-    expect(find.text('Please enter marks'), findsOneWidget);
-  });
-
-  testWidgets('saves a student and displays the Firestore record', (
+  testWidgets('asks for a search value when the field is empty', (
     WidgetTester tester,
   ) async {
-    tester.view.physicalSize = const Size(1000, 1400);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(
+      MaterialApp(home: StudentSearchPage(firestore: firestore)),
+    );
+
+    await tester.tap(find.text('Search Student'));
+    await tester.pump();
+
+    expect(find.text('Please enter a search value.'), findsOneWidget);
+  });
+
+  testWidgets('searches by registration number without case sensitivity', (
+    WidgetTester tester,
+  ) async {
+    await firestore.collection('students').doc('STU-001').set({
+      'name': 'Alex Student',
+      'registrationNumber': 'STU-001',
+      'department': 'Computer Science',
+      'marks': 92.5,
+    });
 
     await tester.pumpWidget(
-      MaterialApp(home: StudentHomePage(firestore: firestore)),
+      MaterialApp(home: StudentSearchPage(firestore: firestore)),
     );
-    await tester.pump();
+    await tester.enterText(find.byType(TextField), ' stu-001 ');
+    await tester.tap(find.text('Search Student'));
+    await tester.pumpAndSettle();
 
-    final fields = find.byType(TextFormField);
-    await tester.enterText(fields.at(0), 'Alex Student');
-    await tester.enterText(fields.at(1), 'stu-001');
-    await tester.enterText(fields.at(2), 'Computer Science');
-    await tester.enterText(fields.at(3), '92.5');
-    await tester.tap(find.text('Save Student to Firestore'));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 100));
-
-    final record = await firestore.collection('students').doc('STU-001').get();
-    expect(record.exists, isTrue);
-    expect(record.data()?['name'], 'Alex Student');
-    expect(record.data()?['registrationNumber'], 'STU-001');
-    expect(record.data()?['department'], 'Computer Science');
-    expect(record.data()?['marks'], 92.5);
-
-    await tester.pump();
     expect(find.text('Alex Student'), findsOneWidget);
+    expect(find.text('Registration Number:'), findsOneWidget);
+    expect(find.text('STU-001'), findsOneWidget);
+    expect(find.text('Computer Science'), findsOneWidget);
+    expect(find.text('92.5'), findsOneWidget);
+  });
+
+  testWidgets('searches by an exact student name', (WidgetTester tester) async {
+    await firestore.collection('students').doc('STU-001').set({
+      'name': 'Alex Student',
+      'registrationNumber': 'STU-001',
+      'department': 'Computer Science',
+      'marks': 92.5,
+    });
+
+    await tester.pumpWidget(
+      MaterialApp(home: StudentSearchPage(firestore: firestore)),
+    );
+    await tester.enterText(find.byType(TextField), 'Alex Student');
+    await tester.tap(find.text('Search Student'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(Card), findsOneWidget);
     expect(
-      find.text(
-        'Registration No: STU-001\nDepartment: Computer Science\nMarks: 92.5',
+      find.descendant(
+        of: find.byType(Card),
+        matching: find.text('Alex Student'),
       ),
       findsOneWidget,
     );
+    expect(find.text('STU-001'), findsOneWidget);
+  });
+
+  testWidgets('searches exact names and combines results without duplicates', (
+    WidgetTester tester,
+  ) async {
+    await firestore.collection('students').doc('STU-001').set({
+      'name': 'STU-001',
+      'registrationNumber': 'STU-001',
+      'department': 'Computer Science',
+      'marks': 92.5,
+    });
+    await firestore.collection('students').doc('OTHER').set({
+      'name': 'STU-001',
+      'registrationNumber': 'OTHER',
+      'department': 'Mathematics',
+      'marks': 85,
+    });
+
+    await tester.pumpWidget(
+      MaterialApp(home: StudentSearchPage(firestore: firestore)),
+    );
+    await tester.enterText(find.byType(TextField), 'STU-001');
+    await tester.tap(find.text('Search Student'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(Card), findsNWidgets(2));
+    expect(find.text('Search completed successfully.'), findsOneWidget);
+    expect(find.text('Computer Science'), findsOneWidget);
+    expect(find.text('Mathematics'), findsOneWidget);
+  });
+
+  testWidgets('shows a message when there is no matching record', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(home: StudentSearchPage(firestore: firestore)),
+    );
+    await tester.enterText(find.byType(TextField), 'missing student');
+    await tester.tap(find.text('Search Student'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('No matching student found.'), findsOneWidget);
   });
 }

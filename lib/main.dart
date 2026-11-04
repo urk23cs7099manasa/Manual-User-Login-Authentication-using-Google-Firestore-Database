@@ -9,30 +9,34 @@ Future<void> main() async {
 
   final firebaseOptions = DefaultFirebaseOptions.currentPlatform;
   if (firebaseOptions == null) {
-    runApp(const StudentFirestoreApp(firebaseConfigured: false));
+    runApp(const FirestoreSearchApp(firebaseConfigured: false));
     return;
   }
 
-  await Firebase.initializeApp(options: firebaseOptions);
-  runApp(const StudentFirestoreApp(firebaseConfigured: true));
+  try {
+    await Firebase.initializeApp(options: firebaseOptions);
+    runApp(const FirestoreSearchApp(firebaseConfigured: true));
+  } on FirebaseException catch (error) {
+    runApp(FirebaseInitializationErrorApp(message: error.message ?? error.code));
+  }
 }
 
-class StudentFirestoreApp extends StatelessWidget {
+class FirestoreSearchApp extends StatelessWidget {
   final bool firebaseConfigured;
 
-  const StudentFirestoreApp({super.key, required this.firebaseConfigured});
+  const FirestoreSearchApp({super.key, required this.firebaseConfigured});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      title: 'Student Records - Firestore',
+      title: 'Firestore Student Search',
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.indigo),
         useMaterial3: true,
       ),
       home: firebaseConfigured
-          ? const StudentHomePage()
+          ? const StudentSearchPage()
           : const FirebaseConfigurationPage(),
     );
   }
@@ -43,11 +47,59 @@ class FirebaseConfigurationPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Student Records - Firestore'),
-        centerTitle: true,
+    return const _InformationPage(
+      title: 'Firestore Student Search',
+      icon: Icons.cloud_off,
+      message: 'Firebase is not configured for this platform.',
+      details:
+          'Create firebase_config.json from the example file, add your '
+          'Firebase project settings, then run this app with '
+          '--dart-define-from-file=firebase_config.json.',
+    );
+  }
+}
+
+class FirebaseInitializationErrorApp extends StatelessWidget {
+  final String message;
+
+  const FirebaseInitializationErrorApp({super.key, required this.message});
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      debugShowCheckedModeBanner: false,
+      title: 'Firestore Student Search',
+      theme: ThemeData(
+        colorScheme: ColorScheme.fromSeed(seedColor: Colors.indigo),
+        useMaterial3: true,
       ),
+      home: _InformationPage(
+        title: 'Firestore Student Search',
+        icon: Icons.error_outline,
+        message: 'Firebase could not be initialized.',
+        details: message,
+      ),
+    );
+  }
+}
+
+class _InformationPage extends StatelessWidget {
+  final String title;
+  final IconData icon;
+  final String message;
+  final String details;
+
+  const _InformationPage({
+    required this.title,
+    required this.icon,
+    required this.message,
+    required this.details,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: Text(title), centerTitle: true),
       body: Center(
         child: Padding(
           padding: const EdgeInsets.all(24),
@@ -56,10 +108,10 @@ class FirebaseConfigurationPage extends StatelessWidget {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Icon(Icons.cloud_off, size: 56, color: Colors.indigo),
+                Icon(icon, size: 56, color: Colors.indigo),
                 const SizedBox(height: 16),
                 Text(
-                  'Firebase is not configured for this platform.',
+                  message,
                   textAlign: TextAlign.center,
                   style: const TextStyle(
                     fontSize: 20,
@@ -67,12 +119,7 @@ class FirebaseConfigurationPage extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 12),
-                const Text(
-                  'Create firebase_config.json from the example file, add your '
-                  'Firebase project settings, then run this app with '
-                  '--dart-define-from-file=firebase_config.json.',
-                  textAlign: TextAlign.center,
-                ),
+                Text(details, textAlign: TextAlign.center),
               ],
             ),
           ),
@@ -82,78 +129,141 @@ class FirebaseConfigurationPage extends StatelessWidget {
   }
 }
 
-class StudentHomePage extends StatefulWidget {
+class StudentSearchPage extends StatefulWidget {
   final FirebaseFirestore? firestore;
 
-  const StudentHomePage({super.key, this.firestore});
+  const StudentSearchPage({super.key, this.firestore});
 
   @override
-  State<StudentHomePage> createState() => _StudentHomePageState();
+  State<StudentSearchPage> createState() => _StudentSearchPageState();
 }
 
-class _StudentHomePageState extends State<StudentHomePage> {
-  final _formKey = GlobalKey<FormState>();
-  final _nameController = TextEditingController();
-  final _regNoController = TextEditingController();
-  final _departmentController = TextEditingController();
-  final _marksController = TextEditingController();
-
+class _StudentSearchPageState extends State<StudentSearchPage> {
+  final _searchController = TextEditingController();
   late final CollectionReference<Map<String, dynamic>> _students =
       (widget.firestore ?? FirebaseFirestore.instance).collection('students');
 
-  bool _isSaving = false;
+  List<QueryDocumentSnapshot<Map<String, dynamic>>> _results = [];
+  bool _isLoading = false;
+  String _message = 'Enter a student name or registration number.';
 
-  Future<void> _saveStudent() async {
-    if (!_formKey.currentState!.validate()) {
+  Future<void> _searchStudents() async {
+    final searchText = _searchController.text.trim();
+    if (searchText.isEmpty) {
+      setState(() {
+        _results = [];
+        _message = 'Please enter a search value.';
+      });
       return;
     }
 
     setState(() {
-      _isSaving = true;
+      _isLoading = true;
+      _results = [];
+      _message = '';
     });
 
     try {
-      final registrationNumber = _regNoController.text.trim().toUpperCase();
+      final registrationQuery = await _students
+          .where(
+            'registrationNumber',
+            isEqualTo: searchText.toUpperCase(),
+          )
+          .get();
+      final nameQuery = await _students
+          .where('name', isEqualTo: searchText)
+          .get();
 
-      await _students.doc(registrationNumber).set({
-        'name': _nameController.text.trim(),
-        'registrationNumber': registrationNumber,
-        'department': _departmentController.text.trim(),
-        'marks': double.parse(_marksController.text.trim()),
-        'createdAt': FieldValue.serverTimestamp(),
+      final results = <String, QueryDocumentSnapshot<Map<String, dynamic>>>{};
+      for (final document in registrationQuery.docs) {
+        results[document.id] = document;
+      }
+      for (final document in nameQuery.docs) {
+        results[document.id] = document;
+      }
+
+      final sortedResults = results.values.toList()
+        ..sort(
+          (first, second) => (first.data()['registrationNumber'] ?? '')
+              .toString()
+              .compareTo(
+                (second.data()['registrationNumber'] ?? '').toString(),
+              ),
+        );
+
+      if (!mounted) return;
+      setState(() {
+        _results = sortedResults;
+        _message = _results.isEmpty
+            ? 'No matching student found.'
+            : 'Search completed successfully.';
       });
-
+    } on FirebaseException catch (error) {
       if (!mounted) return;
-
-      _nameController.clear();
-      _regNoController.clear();
-      _departmentController.clear();
-      _marksController.clear();
-      _showMessage('Student record saved successfully!');
-    } catch (error) {
-      if (!mounted) return;
-      _showMessage('Error saving student: $error');
+      setState(() {
+        _results = [];
+        _message =
+            'Search failed: ${error.message ?? error.code}. Check your '
+            'internet connection and Firestore permissions.';
+      });
     } finally {
       if (mounted) {
         setState(() {
-          _isSaving = false;
+          _isLoading = false;
         });
       }
     }
   }
 
-  void _showMessage(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message), behavior: SnackBarBehavior.floating),
+  Widget _buildDetail(String label, Object? value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 5),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            flex: 2,
+            child: Text(
+              '$label:',
+              style: const TextStyle(fontWeight: FontWeight.w600),
+            ),
+          ),
+          Expanded(
+            flex: 3,
+            child: Text(value?.toString() ?? 'N/A'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStudentCard(QueryDocumentSnapshot<Map<String, dynamic>> doc) {
+    final student = doc.data();
+    return Card(
+      elevation: 3,
+      margin: const EdgeInsets.only(bottom: 12),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              student['name']?.toString() ?? 'N/A',
+              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+            ),
+            const Divider(),
+            _buildDetail('Registration Number', student['registrationNumber']),
+            _buildDetail('Department', student['department']),
+            _buildDetail('Marks', student['marks']),
+          ],
+        ),
+      ),
     );
   }
 
   @override
   void dispose() {
-    _nameController.dispose();
-    _regNoController.dispose();
-    _departmentController.dispose();
-    _marksController.dispose();
+    _searchController.dispose();
     super.dispose();
   }
 
@@ -161,203 +271,62 @@ class _StudentHomePageState extends State<StudentHomePage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text(
-          'Student Records - Firestore',
-          style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
-        ),
+        title: const Text('Firestore Student Search'),
+        centerTitle: true,
         backgroundColor: Colors.indigo,
         foregroundColor: Colors.white,
-        centerTitle: true,
       ),
       body: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 850),
-          child: ListView(
-            padding: const EdgeInsets.all(20),
-            children: [
-              Card(
-                elevation: 3,
-                child: Padding(
-                  padding: const EdgeInsets.all(20),
-                  child: Form(
-                    key: _formKey,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        const Text(
-                          'Enter Student Details',
-                          style: TextStyle(
-                            fontSize: 22,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        const SizedBox(height: 20),
-                        TextFormField(
-                          controller: _nameController,
-                          decoration: const InputDecoration(
-                            labelText: 'Student Name',
-                            prefixIcon: Icon(Icons.person),
-                            border: OutlineInputBorder(),
-                          ),
-                          validator: (value) {
-                            if (value == null || value.trim().isEmpty) {
-                              return 'Please enter student name';
-                            }
-                            return null;
-                          },
-                        ),
-                        const SizedBox(height: 15),
-                        TextFormField(
-                          controller: _regNoController,
-                          decoration: const InputDecoration(
-                            labelText: 'Registration Number',
-                            prefixIcon: Icon(Icons.badge),
-                            border: OutlineInputBorder(),
-                          ),
-                          validator: (value) {
-                            if (value == null || value.trim().isEmpty) {
-                              return 'Please enter registration number';
-                            }
-                            return null;
-                          },
-                        ),
-                        const SizedBox(height: 15),
-                        TextFormField(
-                          controller: _departmentController,
-                          decoration: const InputDecoration(
-                            labelText: 'Department',
-                            prefixIcon: Icon(Icons.school),
-                            border: OutlineInputBorder(),
-                          ),
-                          validator: (value) {
-                            if (value == null || value.trim().isEmpty) {
-                              return 'Please enter department';
-                            }
-                            return null;
-                          },
-                        ),
-                        const SizedBox(height: 15),
-                        TextFormField(
-                          controller: _marksController,
-                          keyboardType: const TextInputType.numberWithOptions(
-                            decimal: true,
-                          ),
-                          decoration: const InputDecoration(
-                            labelText: 'Marks (0-100)',
-                            prefixIcon: Icon(Icons.grade),
-                            border: OutlineInputBorder(),
-                          ),
-                          validator: (value) {
-                            if (value == null || value.trim().isEmpty) {
-                              return 'Please enter marks';
-                            }
-                            final marks = double.tryParse(value.trim());
-                            if (marks == null || marks < 0 || marks > 100) {
-                              return 'Enter marks between 0 and 100';
-                            }
-                            return null;
-                          },
-                        ),
-                        const SizedBox(height: 20),
-                        ElevatedButton.icon(
-                          onPressed: _isSaving ? null : _saveStudent,
-                          icon: _isSaving
-                              ? const SizedBox(
-                                  height: 18,
-                                  width: 18,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    color: Colors.white,
-                                  ),
-                                )
-                              : const Icon(Icons.cloud_upload),
-                          label: Text(
-                            _isSaving
-                                ? 'Saving...'
-                                : 'Save Student to Firestore',
-                          ),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.indigo,
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(vertical: 15),
-                          ),
-                        ),
-                      ],
-                    ),
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(20),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 600),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Icon(Icons.search, size: 65, color: Colors.indigo),
+                const SizedBox(height: 12),
+                const Text(
+                  'Search Student Information',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 23, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 20),
+                TextField(
+                  controller: _searchController,
+                  decoration: const InputDecoration(
+                    labelText: 'Name or Registration Number',
+                    hintText: 'Enter student details',
+                    prefixIcon: Icon(Icons.person_search),
+                    border: OutlineInputBorder(),
+                  ),
+                  textInputAction: TextInputAction.search,
+                  onSubmitted: (_) => _searchStudents(),
+                ),
+                const SizedBox(height: 15),
+                ElevatedButton.icon(
+                  onPressed: _isLoading ? null : _searchStudents,
+                  icon: const Icon(Icons.search),
+                  label: const Text('Search Student'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.indigo,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.all(15),
                   ),
                 ),
-              ),
-              const SizedBox(height: 25),
-              const Text(
-                'Saved Student Records',
-                style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 10),
-              StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-                stream: _students.orderBy('registrationNumber').snapshots(),
-                builder: (context, snapshot) {
-                  if (snapshot.hasError) {
-                    return Card(
-                      child: Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: Text('Error loading records: ${snapshot.error}'),
-                      ),
-                    );
-                  }
-
-                  if (snapshot.connectionState == ConnectionState.waiting &&
-                      !snapshot.hasData) {
-                    return const Padding(
-                      padding: EdgeInsets.all(24),
-                      child: Center(child: CircularProgressIndicator()),
-                    );
-                  }
-
-                  final documents = snapshot.data?.docs ?? [];
-                  if (documents.isEmpty) {
-                    return const Card(
-                      child: Padding(
-                        padding: EdgeInsets.all(20),
-                        child: Center(
-                          child: Text(
-                            'No student records found. Add a student using the form above.',
-                          ),
-                        ),
-                      ),
-                    );
-                  }
-
-                  return Column(
-                    children: documents.map((document) {
-                      final student = document.data();
-                      return Card(
-                        margin: const EdgeInsets.only(bottom: 12),
-                        child: ListTile(
-                          leading: const CircleAvatar(
-                            backgroundColor: Colors.indigo,
-                            foregroundColor: Colors.white,
-                            child: Icon(Icons.person),
-                          ),
-                          title: Text(
-                            student['name']?.toString() ?? '',
-                            style: const TextStyle(fontWeight: FontWeight.bold),
-                          ),
-                          subtitle: Padding(
-                            padding: const EdgeInsets.only(top: 6),
-                            child: Text(
-                              'Registration No: ${student['registrationNumber'] ?? ''}\n'
-                              'Department: ${student['department'] ?? ''}\n'
-                              'Marks: ${student['marks'] ?? ''}',
-                            ),
-                          ),
-                          isThreeLine: true,
-                        ),
-                      );
-                    }).toList(),
-                  );
-                },
-              ),
-            ],
+                const SizedBox(height: 20),
+                if (_isLoading)
+                  const Center(child: CircularProgressIndicator())
+                else if (_message.isNotEmpty)
+                  Text(
+                    _message,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(fontSize: 15),
+                  ),
+                const SizedBox(height: 12),
+                ..._results.map(_buildStudentCard),
+              ],
+            ),
           ),
         ),
       ),

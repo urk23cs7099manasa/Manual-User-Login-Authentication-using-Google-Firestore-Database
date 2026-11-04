@@ -1,11 +1,11 @@
 {
-    "name": "Student Records - Firestore",
-    "short_name": "Student Records",
+    "name": "Firestore Student Search",
+    "short_name": "Student Search",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",
     "theme_color": "#0175C2",
-    "description": "Manage student records with Cloud Firestore.",
+    "description": "Search student records in Cloud Firestore.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [
