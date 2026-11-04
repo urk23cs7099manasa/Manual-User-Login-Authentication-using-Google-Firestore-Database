@@ -1,11 +1,11 @@
 {
-    "name": "Firestore Student Search",
-    "short_name": "Student Search",
+    "name": "Update Student Information",
+    "short_name": "Update Students",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",
     "theme_color": "#0175C2",
-    "description": "Search student records in Cloud Firestore.",
+    "description": "Update student records in Cloud Firestore.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

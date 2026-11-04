@@ -1,15 +1,19 @@
-# Searching Information in Google Firestore Database
+# Update Information in Google Firestore Database
 
-A Flutter app for finding student records stored in a Cloud Firestore
-`students` collection. Search by an exact student name or registration number.
+A Flutter app for loading and updating existing student records in a Cloud
+Firestore `students` collection.
 
 ## Features
 
-- Searches Firestore by exact name or registration number.
-- Matches registration numbers without case sensitivity.
-- Combines both query results without showing duplicate documents.
-- Displays the student's name, registration number, department, and marks.
-- Shows input guidance, loading progress, no-result feedback, and Firestore errors.
+- Loads a student record by registration number.
+- Trims and uppercases the registration number to match the document IDs used
+  by the student records app.
+- Allows editing the student's name, department, and whole-number marks
+  between 0 and 100.
+- Updates an existing document without replacing its other fields, and adds
+  an `updatedAt` server timestamp.
+- Reports missing records, invalid input, Firebase setup issues, and Firestore
+  errors in the app.
 - Includes widget tests using an in-memory Firestore fake.
 
 ## Requirements
@@ -17,7 +21,7 @@ A Flutter app for finding student records stored in a Cloud Firestore
 - Flutter SDK and Dart SDK `^3.13.7`.
 - A Firebase project with Cloud Firestore enabled.
 - A registered Firebase Web app for Chrome, or Android app for Android.
-- Firestore security rules that authorize reads from `students`.
+- Firestore security rules that authorize reads and updates to `students`.
 
 The app does not implement authentication. Do not allow unrestricted public
 access to student records; configure authentication and suitable Firestore
@@ -45,12 +49,10 @@ The local `firebase_config.json` is ignored by Git. Firebase client settings
 are not a substitute for Firestore security rules. Never include service
 account credentials or other server secrets in a Flutter app.
 
-## Prepare student records
+## Student data
 
-The app only searches; it does not create or edit records. Add student
-documents to the `students` collection before searching. Documents created by
-the preceding student-record exercise use an uppercase registration number as
-their document ID and contain these fields:
+Loadable records must already exist in the `students` collection, with the
+uppercase registration number as the document ID. The app expects:
 
 | Field | Type |
 | --- | --- |
@@ -58,11 +60,9 @@ their document ID and contain these fields:
 | `registrationNumber` | String |
 | `department` | String |
 | `marks` | Number |
-| `createdAt` | Firestore timestamp |
 
-Registration-number searches are trimmed and converted to uppercase before
-the query. Name searches use exact, case-sensitive equality, as supported by
-Firestore field queries.
+On update, only `name`, `department`, `marks`, and `updatedAt` are written;
+existing fields such as `registrationNumber` and `createdAt` are preserved.
 
 ## Run
 
@@ -78,7 +78,7 @@ flutter run -d <device-id> --dart-define-from-file=firebase_config.json
 ```
 
 If Firebase is not configured for the selected platform, the app displays
-setup guidance instead of starting an unconfigured search.
+setup guidance instead of starting an unconfigured connection.
 
 ## Test and analyze
 

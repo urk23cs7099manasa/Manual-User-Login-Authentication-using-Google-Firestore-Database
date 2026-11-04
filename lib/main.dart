@@ -9,34 +9,36 @@ Future<void> main() async {
 
   final firebaseOptions = DefaultFirebaseOptions.currentPlatform;
   if (firebaseOptions == null) {
-    runApp(const FirestoreSearchApp(firebaseConfigured: false));
+    runApp(const UpdateStudentApp(firebaseConfigured: false));
     return;
   }
 
   try {
     await Firebase.initializeApp(options: firebaseOptions);
-    runApp(const FirestoreSearchApp(firebaseConfigured: true));
+    runApp(const UpdateStudentApp(firebaseConfigured: true));
   } on FirebaseException catch (error) {
-    runApp(FirebaseInitializationErrorApp(message: error.message ?? error.code));
+    runApp(
+      FirebaseInitializationErrorApp(message: error.message ?? error.code),
+    );
   }
 }
 
-class FirestoreSearchApp extends StatelessWidget {
+class UpdateStudentApp extends StatelessWidget {
   final bool firebaseConfigured;
 
-  const FirestoreSearchApp({super.key, required this.firebaseConfigured});
+  const UpdateStudentApp({super.key, required this.firebaseConfigured});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
+      title: 'Update Student Information',
       debugShowCheckedModeBanner: false,
-      title: 'Firestore Student Search',
       theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.indigo),
+        colorScheme: ColorScheme.fromSeed(seedColor: Colors.teal),
         useMaterial3: true,
       ),
       home: firebaseConfigured
-          ? const StudentSearchPage()
+          ? const UpdateStudentPage()
           : const FirebaseConfigurationPage(),
     );
   }
@@ -48,7 +50,6 @@ class FirebaseConfigurationPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return const _InformationPage(
-      title: 'Firestore Student Search',
       icon: Icons.cloud_off,
       message: 'Firebase is not configured for this platform.',
       details:
@@ -67,14 +68,13 @@ class FirebaseInitializationErrorApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
+      title: 'Update Student Information',
       debugShowCheckedModeBanner: false,
-      title: 'Firestore Student Search',
       theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.indigo),
+        colorScheme: ColorScheme.fromSeed(seedColor: Colors.teal),
         useMaterial3: true,
       ),
       home: _InformationPage(
-        title: 'Firestore Student Search',
         icon: Icons.error_outline,
         message: 'Firebase could not be initialized.',
         details: message,
@@ -84,13 +84,11 @@ class FirebaseInitializationErrorApp extends StatelessWidget {
 }
 
 class _InformationPage extends StatelessWidget {
-  final String title;
   final IconData icon;
   final String message;
   final String details;
 
   const _InformationPage({
-    required this.title,
     required this.icon,
     required this.message,
     required this.details,
@@ -99,7 +97,10 @@ class _InformationPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text(title), centerTitle: true),
+      appBar: AppBar(
+        title: const Text('Update Student Information'),
+        centerTitle: true,
+      ),
       body: Center(
         child: Padding(
           padding: const EdgeInsets.all(24),
@@ -108,7 +109,7 @@ class _InformationPage extends StatelessWidget {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(icon, size: 56, color: Colors.indigo),
+                Icon(icon, size: 56, color: Colors.teal),
                 const SizedBox(height: 16),
                 Text(
                   message,
@@ -129,83 +130,67 @@ class _InformationPage extends StatelessWidget {
   }
 }
 
-class StudentSearchPage extends StatefulWidget {
+class UpdateStudentPage extends StatefulWidget {
   final FirebaseFirestore? firestore;
 
-  const StudentSearchPage({super.key, this.firestore});
+  const UpdateStudentPage({super.key, this.firestore});
 
   @override
-  State<StudentSearchPage> createState() => _StudentSearchPageState();
+  State<UpdateStudentPage> createState() => _UpdateStudentPageState();
 }
 
-class _StudentSearchPageState extends State<StudentSearchPage> {
-  final _searchController = TextEditingController();
+class _UpdateStudentPageState extends State<UpdateStudentPage> {
+  final _registrationController = TextEditingController();
+  final _nameController = TextEditingController();
+  final _departmentController = TextEditingController();
+  final _marksController = TextEditingController();
+
   late final CollectionReference<Map<String, dynamic>> _students =
       (widget.firestore ?? FirebaseFirestore.instance).collection('students');
 
-  List<QueryDocumentSnapshot<Map<String, dynamic>>> _results = [];
   bool _isLoading = false;
-  String _message = 'Enter a student name or registration number.';
+  String? _loadedRegistrationNumber;
 
-  Future<void> _searchStudents() async {
-    final searchText = _searchController.text.trim();
-    if (searchText.isEmpty) {
-      setState(() {
-        _results = [];
-        _message = 'Please enter a search value.';
-      });
+  bool get _recordFound => _loadedRegistrationNumber != null;
+
+  Future<void> _loadStudent() async {
+    final registrationNumber = _registrationController.text
+        .trim()
+        .toUpperCase();
+    if (registrationNumber.isEmpty) {
+      _showMessage('Please enter a registration number.');
       return;
     }
 
     setState(() {
       _isLoading = true;
-      _results = [];
-      _message = '';
+      _loadedRegistrationNumber = null;
+      _clearStudentFields();
     });
 
     try {
-      final registrationQuery = await _students
-          .where(
-            'registrationNumber',
-            isEqualTo: searchText.toUpperCase(),
-          )
-          .get();
-      final nameQuery = await _students
-          .where('name', isEqualTo: searchText)
-          .get();
-
-      final results = <String, QueryDocumentSnapshot<Map<String, dynamic>>>{};
-      for (final document in registrationQuery.docs) {
-        results[document.id] = document;
-      }
-      for (final document in nameQuery.docs) {
-        results[document.id] = document;
-      }
-
-      final sortedResults = results.values.toList()
-        ..sort(
-          (first, second) => (first.data()['registrationNumber'] ?? '')
-              .toString()
-              .compareTo(
-                (second.data()['registrationNumber'] ?? '').toString(),
-              ),
-        );
-
+      final document = await _students.doc(registrationNumber).get();
       if (!mounted) return;
+
+      final data = document.data();
+      if (data == null) {
+        _showMessage('Student record not found.');
+        return;
+      }
+
       setState(() {
-        _results = sortedResults;
-        _message = _results.isEmpty
-            ? 'No matching student found.'
-            : 'Search completed successfully.';
+        _loadedRegistrationNumber = registrationNumber;
+        _nameController.text = data['name']?.toString() ?? '';
+        _departmentController.text = data['department']?.toString() ?? '';
+        _marksController.text = data['marks']?.toString() ?? '';
       });
+      _showMessage('Student record loaded successfully.');
     } on FirebaseException catch (error) {
       if (!mounted) return;
-      setState(() {
-        _results = [];
-        _message =
-            'Search failed: ${error.message ?? error.code}. Check your '
-            'internet connection and Firestore permissions.';
-      });
+      _showMessage(
+        'Unable to retrieve record: ${error.message ?? error.code}. '
+        'Check Firestore access.',
+      );
     } finally {
       if (mounted) {
         setState(() {
@@ -215,55 +200,85 @@ class _StudentSearchPageState extends State<StudentSearchPage> {
     }
   }
 
-  Widget _buildDetail(String label, Object? value) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 5),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(
-            flex: 2,
-            child: Text(
-              '$label:',
-              style: const TextStyle(fontWeight: FontWeight.w600),
-            ),
-          ),
-          Expanded(
-            flex: 3,
-            child: Text(value?.toString() ?? 'N/A'),
-          ),
-        ],
-      ),
-    );
+  Future<void> _updateStudent() async {
+    if (!_recordFound) {
+      _showMessage('Search for an existing student first.');
+      return;
+    }
+
+    final registrationNumber = _registrationController.text
+        .trim()
+        .toUpperCase();
+    if (registrationNumber != _loadedRegistrationNumber) {
+      _showMessage(
+        'Load the student record for this registration number first.',
+      );
+      return;
+    }
+
+    final name = _nameController.text.trim();
+    final department = _departmentController.text.trim();
+    final marksText = _marksController.text.trim();
+    final marks = int.tryParse(marksText);
+
+    if (name.isEmpty ||
+        department.isEmpty ||
+        marks == null ||
+        marks < 0 ||
+        marks > 100) {
+      _showMessage(
+        'Enter valid details. Marks must be a whole number from 0 to 100.',
+      );
+      return;
+    }
+
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      await _students.doc(registrationNumber).update({
+        'name': name,
+        'department': department,
+        'marks': marks,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+
+      if (!mounted) return;
+      _showMessage('Student information updated successfully.');
+    } on FirebaseException catch (error) {
+      if (!mounted) return;
+      _showMessage(
+        'Update failed: ${error.message ?? error.code}. '
+        'Check the record and Firestore permissions.',
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
   }
 
-  Widget _buildStudentCard(QueryDocumentSnapshot<Map<String, dynamic>> doc) {
-    final student = doc.data();
-    return Card(
-      elevation: 3,
-      margin: const EdgeInsets.only(bottom: 12),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              student['name']?.toString() ?? 'N/A',
-              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-            ),
-            const Divider(),
-            _buildDetail('Registration Number', student['registrationNumber']),
-            _buildDetail('Department', student['department']),
-            _buildDetail('Marks', student['marks']),
-          ],
-        ),
-      ),
+  void _clearStudentFields() {
+    _nameController.clear();
+    _departmentController.clear();
+    _marksController.clear();
+  }
+
+  void _showMessage(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message), behavior: SnackBarBehavior.floating),
     );
   }
 
   @override
   void dispose() {
-    _searchController.dispose();
+    _registrationController.dispose();
+    _nameController.dispose();
+    _departmentController.dispose();
+    _marksController.dispose();
     super.dispose();
   }
 
@@ -271,60 +286,93 @@ class _StudentSearchPageState extends State<StudentSearchPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Firestore Student Search'),
+        title: const Text('Update Student Information'),
         centerTitle: true,
-        backgroundColor: Colors.indigo,
+        backgroundColor: Colors.teal,
         foregroundColor: Colors.white,
       ),
       body: Center(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(20),
           child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 600),
+            constraints: const BoxConstraints(maxWidth: 550),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                const Icon(Icons.search, size: 65, color: Colors.indigo),
+                const Icon(Icons.edit_note, size: 65, color: Colors.teal),
                 const SizedBox(height: 12),
                 const Text(
-                  'Search Student Information',
+                  'Update Student Record',
                   textAlign: TextAlign.center,
                   style: TextStyle(fontSize: 23, fontWeight: FontWeight.bold),
                 ),
-                const SizedBox(height: 20),
+                const SizedBox(height: 24),
                 TextField(
-                  controller: _searchController,
+                  controller: _registrationController,
+                  enabled: !_isLoading,
+                  textCapitalization: TextCapitalization.characters,
                   decoration: const InputDecoration(
-                    labelText: 'Name or Registration Number',
-                    hintText: 'Enter student details',
-                    prefixIcon: Icon(Icons.person_search),
+                    labelText: 'Registration Number',
+                    hintText: 'Enter registration number',
+                    prefixIcon: Icon(Icons.badge),
                     border: OutlineInputBorder(),
                   ),
-                  textInputAction: TextInputAction.search,
-                  onSubmitted: (_) => _searchStudents(),
+                  onSubmitted: (_) => _isLoading ? null : _loadStudent(),
                 ),
-                const SizedBox(height: 15),
-                ElevatedButton.icon(
-                  onPressed: _isLoading ? null : _searchStudents,
+                const SizedBox(height: 12),
+                OutlinedButton.icon(
+                  onPressed: _isLoading ? null : _loadStudent,
                   icon: const Icon(Icons.search),
-                  label: const Text('Search Student'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.indigo,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.all(15),
+                  label: const Text('Load Student Record'),
+                ),
+                const SizedBox(height: 20),
+                TextField(
+                  controller: _nameController,
+                  enabled: _recordFound && !_isLoading,
+                  decoration: const InputDecoration(
+                    labelText: 'Student Name',
+                    prefixIcon: Icon(Icons.person),
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _departmentController,
+                  enabled: _recordFound && !_isLoading,
+                  decoration: const InputDecoration(
+                    labelText: 'Department',
+                    prefixIcon: Icon(Icons.school),
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _marksController,
+                  enabled: _recordFound && !_isLoading,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: 'Marks (0-100)',
+                    prefixIcon: Icon(Icons.grade),
+                    border: OutlineInputBorder(),
                   ),
                 ),
                 const SizedBox(height: 20),
-                if (_isLoading)
-                  const Center(child: CircularProgressIndicator())
-                else if (_message.isNotEmpty)
-                  Text(
-                    _message,
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(fontSize: 15),
+                ElevatedButton.icon(
+                  onPressed: _isLoading || !_recordFound
+                      ? null
+                      : _updateStudent,
+                  icon: const Icon(Icons.save),
+                  label: const Text('Update Student Information'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.teal,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.all(16),
                   ),
-                const SizedBox(height: 12),
-                ..._results.map(_buildStudentCard),
+                ),
+                if (_isLoading) ...[
+                  const SizedBox(height: 20),
+                  const Center(child: CircularProgressIndicator()),
+                ],
               ],
             ),
           ),
